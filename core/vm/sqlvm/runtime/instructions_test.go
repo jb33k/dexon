@@ -562,6 +562,7 @@ func (s *autoIncSuite) TestFillAutoInc() {
 		input    *Operand
 		tableRef schema.TableRef
 		result   []*Operand
+		field    *Operand
 		err      error
 	}
 	tt := []testcase{
@@ -600,6 +601,21 @@ func (s *autoIncSuite) TestFillAutoInc() {
 					},
 				},
 			},
+			field: &Operand{
+				Meta: []ast.DataType{ast.ComposeDataType(ast.DataTypeMajorUint, 0)},
+				Data: []Tuple{
+					{
+						&Raw{
+							Value: decimal.New(0, 0),
+						},
+					},
+					{
+						&Raw{
+							Value: decimal.New(2, 0),
+						},
+					},
+				},
+			},
 			err: nil,
 		},
 		{
@@ -610,6 +626,7 @@ func (s *autoIncSuite) TestFillAutoInc() {
 			},
 			tableRef: schema.TableRef(1),
 			result:   nil,
+			field:    nil,
 			err:      errors.ErrorCodeOverflow,
 		},
 		{
@@ -620,19 +637,22 @@ func (s *autoIncSuite) TestFillAutoInc() {
 			},
 			tableRef: schema.TableRef(2),
 			result:   nil,
+			field:    nil,
 			err:      errors.ErrorCodeOverflow,
 		},
 	}
 
 	for _, t := range tt {
-		r, err := t.input.fillAutoInc(s.ctx, t.tableRef)
+		f, r, err := t.input.fillAutoInc(s.ctx, t.tableRef)
 		s.Require().Equalf(t.err, err, "testcase %v\n", t.name)
 		if t.err == nil {
 			s.Require().Equalf(len(t.result), len(r), "testcase %v\n", t.name)
+			s.Require().Equalf(len(t.result), len(f.Data), "testcase %v\n", t.name)
 			for i := range r {
 				s.Require().Truef(r[i].Equal(t.result[i]),
 					"testcase: %v, i: %v\n", t.name, i)
 			}
+			s.Require().Truef(f.Equal(t.field), "testcase %v\n", t.name)
 		}
 	}
 }
@@ -771,6 +791,7 @@ func (s *setDefaultSuite) TestFillDefault() {
 		input    *Operand
 		tableRef schema.TableRef
 		result   []*Operand
+		field    *Operand
 		err      error
 	}
 	tt := []testcase{
@@ -823,6 +844,31 @@ func (s *setDefaultSuite) TestFillDefault() {
 					},
 				},
 			},
+			field: &Operand{
+				Meta: []ast.DataType{ast.ComposeDataType(ast.DataTypeMajorUint, 0)},
+				Data: []Tuple{
+					{
+						&Raw{
+							Value: decimal.New(0, 0),
+						},
+					},
+					{
+						&Raw{
+							Value: decimal.New(1, 0),
+						},
+					},
+					{
+						&Raw{
+							Value: decimal.New(2, 0),
+						},
+					},
+					{
+						&Raw{
+							Value: decimal.New(3, 0),
+						},
+					},
+				},
+			},
 			err: nil,
 		},
 		{
@@ -833,7 +879,13 @@ func (s *setDefaultSuite) TestFillDefault() {
 			},
 			tableRef: schema.TableRef(1),
 			result:   []*Operand{},
-			err:      nil,
+			field: &Operand{
+				Meta: []ast.DataType{
+					ast.ComposeDataType(ast.DataTypeMajorUint, 0),
+				},
+				Data: []Tuple{},
+			},
+			err: nil,
 		},
 		{
 			name: "one default case",
@@ -854,6 +906,16 @@ func (s *setDefaultSuite) TestFillDefault() {
 					},
 				},
 			},
+			field: &Operand{
+				Meta: []ast.DataType{ast.ComposeDataType(ast.DataTypeMajorUint, 0)},
+				Data: []Tuple{
+					{
+						&Raw{
+							Value: decimal.New(3, 0),
+						},
+					},
+				},
+			},
 			err: nil,
 		},
 		{
@@ -870,19 +932,27 @@ func (s *setDefaultSuite) TestFillDefault() {
 			},
 			tableRef: schema.TableRef(2),
 			result:   []*Operand{},
-			err:      nil,
+			field: &Operand{
+				Meta: []ast.DataType{
+					ast.ComposeDataType(ast.DataTypeMajorUint, 0),
+				},
+				Data: []Tuple{},
+			},
+			err: nil,
 		},
 	}
 
 	for _, t := range tt {
-		r, err := t.input.fillDefault(s.ctx, t.tableRef)
+		f, r, err := t.input.fillDefault(s.ctx, t.tableRef)
 		s.Require().Equalf(t.err, err, "testcase %v\n", t.name)
 		if t.err == nil {
 			s.Require().Equalf(len(t.result), len(r), "testcase %v\n", t.name)
+			s.Require().Equalf(len(t.result), len(f.Data), "testcase %v\n", t.name)
 			for i := range r {
 				s.Require().Truef(r[i].Equal(t.result[i]),
 					"testcase: %v, i: %v\n", t.name, i)
 			}
+			s.Require().Truef(f.Equal(t.field), "testcase %v\n", t.name)
 		}
 	}
 }

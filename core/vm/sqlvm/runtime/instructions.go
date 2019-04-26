@@ -1884,18 +1884,21 @@ func opFunc(ctx *common.Context, ops, registers []*Operand, output uint) (err er
 }
 
 // fillAutoInc appends autoincrement column reference to receiver and return the
-// corresponding incremented field data array.
-func (op *Operand) fillAutoInc(ctx *common.Context, tableRef schema.TableRef) ([]*Operand, error) {
-	f := func(col schema.Column, r []*Operand) ([]*Operand, error) {
-		if col.Attr == schema.ColumnAttrHasSequence {
+// corresponding incremented field and data array.
+func (op *Operand) fillAutoInc(ctx *common.Context,
+	tableRef schema.TableRef,
+) (*Operand, []*Operand, error) {
+	f := func(col schema.Column, r []*Operand) (bool, []*Operand, error) {
+		added := false
+		if col.Attr&schema.ColumnAttrHasSequence != 0 {
 			dVal := ctx.Storage.IncSequence(ctx.Contract.Address(),
 				tableRef, uint8(col.Sequence), 1)
 			_, max, ok := col.Type.GetMinMax()
 			if !ok {
-				return nil, se.ErrorCodeInvalidDataType
+				return false, nil, se.ErrorCodeInvalidDataType
 			}
 			if dVal.Cmp(max) > 0 {
-				return nil, se.ErrorCodeOverflow
+				return false, nil, se.ErrorCodeOverflow
 			}
 			op1 := &Operand{
 				Meta: []ast.DataType{col.Type},
@@ -1909,45 +1912,65 @@ func (op *Operand) fillAutoInc(ctx *common.Context, tableRef schema.TableRef) ([
 				},
 			}
 			r = append(r, op1)
+			added = true
 		}
-		return r, nil
+		return added, r, nil
 	}
 	return op.fillMissingData(ctx, tableRef, f)
 }
 
 func (op *Operand) fillMissingData(ctx *common.Context,
 	tableRef schema.TableRef,
-	f func(schema.Column, []*Operand) ([]*Operand, error)) ([]*Operand, error) {
+	f func(schema.Column, []*Operand) (bool, []*Operand, error),
+) (*Operand, []*Operand, error) {
 
 	table := ctx.Storage.Schema[tableRef]
 	fields, err := op.toUint8()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	sort.Slice(fields, func(i, j int) bool {
 		return fields[i] < fields[j]
 	})
 	rOp := make([]*Operand, 0)
+	fOp := &Operand{
+		Meta: []ast.DataType{
+			ast.ComposeDataType(ast.DataTypeMajorUint, 0),
+		},
+		Data: []Tuple{},
+	}
 	fIdx := 0
 	for i := 0; i < len(table.Columns); i++ {
+		var added bool
 		if fIdx < len(fields) && i == int(fields[fIdx]) {
 			fIdx++
 			continue
 		}
 		col := table.Columns[i]
-		rOp, err = f(col, rOp)
+		added, rOp, err = f(col, rOp)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		if added {
+			fOp.Data = append(fOp.Data, Tuple{
+				&Raw{
+					Value: decimal.New(int64(i), 0),
+				},
+			})
 		}
 	}
-	return rOp, nil
+	return fOp, rOp, nil
 }
 
 // fillDefault appends default column reference to receiver and return the
-// corresponding default field data array.
-func (op *Operand) fillDefault(ctx *common.Context, tableRef schema.TableRef) ([]*Operand, error) {
-	f := func(col schema.Column, rOp []*Operand) ([]*Operand, error) {
-		if col.Attr == schema.ColumnAttrHasDefault {
+// corresponding default field and data array.
+func (op *Operand) fillDefault(ctx *common.Context,
+	tableRef schema.TableRef,
+) (*Operand, []*Operand, error) {
+	f := func(col schema.Column, rOp []*Operand) (bool, []*Operand, error) {
+		added := false
+		if (col.Attr&schema.ColumnAttrHasDefault != 0) &&
+			(col.Attr&schema.ColumnAttrHasSequence == 0) {
 			var r Raw
 			major, _ := ast.DecomposeDataType(col.Type)
 			switch major {
@@ -1974,8 +1997,9 @@ func (op *Operand) fillDefault(ctx *common.Context, tableRef schema.TableRef) ([
 				},
 			}
 			rOp = append(rOp, op1)
+			added = true
 		}
-		return rOp, nil
+		return added, rOp, nil
 	}
 	return op.fillMissingData(ctx, tableRef, f)
 }
